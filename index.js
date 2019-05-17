@@ -13,23 +13,24 @@ class Room {
         this.objects = objects;
         this.obstacles = obstacles;
     }
-    returnDescription = function () {
+
+    returnDescription() {
         var output = "";
 
         var str = "";
-        this.objects.array.forEach(element => {
-            str += "a " + element.getObjectDescriptions + ", ";
+        room.objects.forEach(element => {
+            str += "a " + element.getObjectDescription() + ", ";
         });
 
         if (str) {
-            output += "You see " + str.splice(0, -2) + " in the area. ";
+            output += "You see " + str + " in the area. ";
         }
-        var obstacleDescriptions = this.obstacles.getObstacleSurveyDescriptions();
-
+        var obstacleDescriptions = room.obstacles.getObstacleSurveyDescriptions();
+        
         var ctr = 0;
-
+        
         var freeSpaces = "";
-        obstacleDescriptions.array.forEach(element => {
+        obstacleDescriptions.forEach(element => {
             var direction = "";
             if (ctr === 0)
                 direction = "north";
@@ -40,19 +41,18 @@ class Room {
             else
                 direction = "west";
 
-
-            if (element && element !== "wall") {
-                output += "There is a " + element + " to the " + direction + ", ";
+            if (!element) {
+              freeSpaces += direction + ", ";
             }
-            else {
-                freeSpaces += direction + ", ";
+            else if (element && element !== "wall") {
+                output += "There is a " + element + " to the " + direction + ", ";
             }
             ctr += 1;
         });
         if (freeSpaces) {
           output += "You can go " + freeSpaces
         }
-        output = output.splice(0, -2);
+        
         return output;
     }
 
@@ -67,27 +67,25 @@ class Obstacles {
         this.south = south;
         this.east = east;
         this.west = west;
-    }
+            //returns an array of barrier descriptions
+        this.getObstacleSurveyDescriptions = function() {
+            return [this.north ? this.north.name: "",
+                    this.east ? this.east.name : "",
+                    this.south ? this.south.name : "",
+                    this.west ? this.west.name : ""];
+        }
 
-    //returns an array of barrier descriptions
-    getObstacleSurveyDescriptions = function() {
-      
-        return [this.north ? this.north.name: "",
-                this.south ? this.south.name : "",
-                this.west ? this.west.name : "",
-                this.east ? this.east.name : ""];
-    }
-
-    getObstacle = function(obstacleName) {
-        if (this.north == obstacleName)
-            return {"barrier": this.north, "direction": "north"};
-        else if (this.south == obstacleName)
-            return {"barrier": this.south, "direction": "south"};
-        else if (this.east == obstacleName)
-            return {"barrier": this.east, "direction": "east"};
-        else if (this.west == obstacleName)
-            return {"barrier": this.west, "direction": "west"};
-        return false;
+        this.getObstacle = function(obstacleName) {
+            if (this.north == obstacleName)
+                return {"barrier": this.north, "direction": "north"};
+            else if (this.south == obstacleName)
+                return {"barrier": this.south, "direction": "south"};
+            else if (this.east == obstacleName)
+                return {"barrier": this.east, "direction": "east"};
+            else if (this.west == obstacleName)
+                return {"barrier": this.west, "direction": "west"};
+            return false;
+        }
     }
 }
 
@@ -100,28 +98,28 @@ class Barrier {
         this.name = name;
         this.isPassable = isPassable;
         this.descriptions = descriptions;
-    }
 
-    changeStateTo = function (state) {
-        this.state = state;
-    }
-
-    // format for what's returned: "barrier.description based on the intent"
-    returnDescription = function(intent) {
-      if (intent in this.descriptions) {
-        return this.descriptions[intent];
-      }
-      return "";
+        this.changeStateTo = function (state) {
+            this.state = state;
+        }
+    
+        // format for what's returned: "barrier.description based on the intent"
+        this.returnDescription = function(intent) {
+          if (intent in this.descriptions) {
+            return this.descriptions[intent];
+          }
+          return "";
+        }
     }
 }
 
 class Object {
     constructor(name) {
         this.name = name;
-    }
 
-    getObjectDescription = function () {
-        return this.name;
+        this.getObjectDescription = function () {
+            return this.name;
+        }
     }
 }
 
@@ -143,7 +141,7 @@ function getDoor() {
 
 function initializeMap() {
     return [
-            [new Room([], new Obstacles(getWall(), null, null, getWall())), new Room(new Object("key"), new Obstacles(getWall(), getDoor(), getWall(), null))],
+            [new Room([], new Obstacles(getWall(), null, null, getWall())), new Room([new Object("key")], new Obstacles(getWall(), getDoor(), getWall(), null))],
             [new Room([], new Obstacles(null, getWall(), getWall(), getWall())), new Room([], new Obstacles(getDoor(), getWall(), getWall(), getWall()))]
           ];
 }
@@ -217,7 +215,8 @@ const LaunchHandler = {
     }
     
     handlerInput.attributesManager.setSessionAttributes(attributes);
-    const speechOutput = "Welcome to Zork!";
+    var speechOutput = "Welcome to Zork!";
+    speechOutput += attributes.map[attributes.xCoordinate][attributes.yCoordinate].returnDescription();
 
     return handlerInput.responseBuilder
       .speak(speechOutput)
@@ -245,13 +244,16 @@ const NavigationHandler = {
         var newCoords = getCoordinateInThisDirection(xCoord, yCoord, direction);
         attributes.xCoordinate = newCoords.x;
         attributes.yCoordinate = newCoords.y;
+        console.log(map[xCoord][yCoord]);
+        speechOutput += "You go " + direction + ". You are at x coordinate: " + 
+                        attributes.xCoordinate + " and y coordinate: " + attributes.yCoordinate + map[xCoord][yCoord].returnDescription();
     }
     else {
-        speechOutput = "Which direction do you want to go?";
+        speechOutput += "Which direction do you want to go?";
     }
     handlerInput.attributesManager.setSessionAttributes(attributes);
 
-    speechOutput += "You go " + direction + ". You are at x coordinate: " + attributes.xCoordinate + " and y coordinate: " + attributes.yCoordinate + map[xCoord][yCoord].returnDescription;
+    
 
     return handlerInput.responseBuilder
       .speak(speechOutput)
