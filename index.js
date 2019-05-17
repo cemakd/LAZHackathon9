@@ -13,11 +13,51 @@ class Room {
         this.objects = objects;
         this.obstacles = obstacles;
     }
+    returnDescription = function () {
+        var output = "";
+
+        var str = "";
+        this.objects.array.forEach(element => {
+            str += "a " + element.getObjectDescriptions + ", ";
+        });
+
+        if (str) {
+            output += "You see " + str.splice(0, -2) + " in the area. ";
+        }
+        var obstacleDescriptions = this.obstacles.getObstacleSurveyDescriptions();
+
+        var ctr = 0;
+
+        var freeSpaces = "";
+        obstacleDescriptions.array.forEach(element => {
+            var direction = "";
+            if (ctr === 0)
+                direction = "north";
+            else if (ctr === 1)
+                direction = "east";
+            else if (ctr === 2)
+                direction = "south";
+            else
+                direction = "west";
+
+
+            if (element && element !== "wall") {
+                output += "There is a " + element + " to the " + direction + ", ";
+            }
+            else {
+                freeSpaces += direction + ", ";
+            }
+            ctr += 1;
+        });
+        if (freeSpaces) {
+          output += "You can go " + freeSpaces
+        }
+        output = output.splice(0, -2);
+        return output;
+    }
 
     //format for what's returned: [array of object outputs] + [array of obstacle outputs]
-    returnDescription = function() {
-        return objects.getObjectDescriptions + obstacles.getObstacleDescriptions;
-    }
+    
 }
 
 //represents all the four sides of a room
@@ -30,22 +70,23 @@ class Obstacles {
     }
 
     //returns an array of barrier descriptions
-    getObstacleDescriptions = function() {
-        return [this.north.returnDescription("north"),
-                this.south.returnDescription("south"),
-                this.east.returnDescription("east"),
-                this.west.returnDescription("west")];
+    getObstacleSurveyDescriptions = function() {
+      
+        return [this.north ? this.north.name: "",
+                this.south ? this.south.name : "",
+                this.west ? this.west.name : "",
+                this.east ? this.east.name : ""];
     }
 
     getObstacle = function(obstacleName) {
         if (this.north == obstacleName)
-            return this.north;
-        else if (this.north == obstacleName)
-            return this.north;
-        else if (this.north == obstacleName)
-            return this.north;
-        else if (this.north == obstacleName)
-            return this.north;
+            return {"barrier": this.north, "direction": "north"};
+        else if (this.south == obstacleName)
+            return {"barrier": this.south, "direction": "south"};
+        else if (this.east == obstacleName)
+            return {"barrier": this.east, "direction": "east"};
+        else if (this.west == obstacleName)
+            return {"barrier": this.west, "direction": "west"};
         return false;
     }
 }
@@ -55,51 +96,54 @@ class Obstacles {
 // decription: provides description about barrier that is passed back to player
 
 class Barrier {
-    constructor(name, isPassable, passableDescription = null, surveyDescription) {
+    constructor(name, isPassable, descriptions) {
         this.name = name;
         this.isPassable = isPassable;
-        this.passableDescription = passableDescription;
-        this.surveyDescription = surveyDescription;
+        this.descriptions = descriptions;
     }
 
     changeStateTo = function (state) {
         this.state = state;
     }
 
-    // format for what's returned: "there is a barrier.description on your obstacles.direction"
-    returnDescription = function(direction) {
-      if (this.name !== "wall") {
-        return this.surveyDescription +  direction + ". ";
+    // format for what's returned: "barrier.description based on the intent"
+    returnDescription = function(intent) {
+      if (intent in this.descriptions) {
+        return this.descriptions[intent];
       }
       return "";
     }
 }
 
-class Objects {
+class Object {
     constructor(name) {
         this.name = name;
     }
 
-    getObjectDescriptions = function () {
+    getObjectDescription = function () {
         return this.name;
     }
 }
 
 // helper function for setting isPassable==false for wall barrier
 function getWall() {
-    return new Barrier("wall", false, "A wall blocks your path");
+    var descriptions = {"wall": "A wall blocks your path"};
+    return new Barrier("wall", false, descriptions);
 }
 
 // helper function for setting isPassable==true for door barrier
 function getDoor() {
-    var door = new Barrier("door", true, "You can't go through a locked door.");
+    var descriptions = {"open": "you opened the door",
+                    "unlocked": "the door is unlocked",
+                    "locked": "the door is locked"};
+    var door = new Barrier("door", true, descriptions);
     door.changeStateTo("locked");
     return door;
 }
 
 function initializeMap() {
     return [
-            [new Room([], new Obstacles(getWall(), null, null, getWall())), new Room(new Objects("key"), new Obstacles(getWall(), getDoor(), getWall(), null))],
+            [new Room([], new Obstacles(getWall(), null, null, getWall())), new Room(new Object("key"), new Obstacles(getWall(), getDoor(), getWall(), null))],
             [new Room([], new Obstacles(null, getWall(), getWall(), getWall())), new Room([], new Obstacles(getDoor(), getWall(), getWall(), getWall()))]
           ];
 }
@@ -111,6 +155,51 @@ function isItem(map, item, xCoord, yCoord) {
         return true;
     }
     return null;
+}
+
+function getCoordinateInThisDirection(currentX, currentY, direction) {
+    if (direction === "north") {
+        return {"x": currentX - 1, "y": currentY};
+    }
+    else if (direction === "south") {
+        return {"x": currentX + 1, "y": currentY};
+    }
+    else if (direction === "east") {
+        return {"x": currentX, "y": currentY + 1};
+    }
+    else if (direction === "west") {
+        return {"x": currentX, "y": currentY - 1};
+    }
+    return {"x": 0, "y": 0};
+}
+
+function getOppositeDirection(direction) {
+    if (direction === "north")
+        return "south";
+    if (direction === "south")
+        return "north";
+    if (direction === "east")
+        return "west";
+    if (direction === "west")
+        return "east";
+}
+
+function unlockDoor(map, door, currentX, currentY, direction) {
+    // Unlock door in current room
+    door.changeStateTo("unlocked");
+    var otherDoorCoords = getCoordinateInThisDirection(currentX, currentY, direction);
+    var otherRoom = map[otherDoorCoords.x][otherDoorCoords.y];
+    var otherDirection = getOppositeDirection(direction);
+    var otherDoor;
+    if (otherDirection === "north")
+        otherDoor = otherRoom.obstacles.north;
+    else if (otherDirection === "south")
+        otherDoor = otherRoom.obstacles.south;
+    else if (otherDirection === "east")
+        otherDoor = otherRoom.obstacles.east;
+    else if (otherDirection === "west")
+        otherDoor = otherRoom.obstacles.west;
+    otherDoor.changeStateTo("unlocked");
 }
 
 const LaunchHandler = {
@@ -148,23 +237,21 @@ const NavigationHandler = {
     var attributes = handlerInput.attributesManager.getSessionAttributes();
     var xCoord = attributes.xCoordinate;
     var yCoord = attributes.yCoordinate;
+    var map = attributes.map;
 
     var speechOutput = "Navigation intent called. ";
-    if (request.intent.slots.Direction.value === "north") {
-        attributes.xCoordinate = xCoord - 1;
+    var direction = request.intent.slots.Direction.value;
+    if (direction) {
+        var newCoords = getCoordinateInThisDirection(xCoord, yCoord, direction);
+        attributes.xCoordinate = newCoords.x;
+        attributes.yCoordinate = newCoords.y;
     }
-    else if (request.intent.slots.Direction.value === "south") {
-        attributes.xCoordinate = xCoord + 1;
-    }
-    else if (request.intent.slots.Direction.value === "east") {
-        attributes.yCoordinate = yCoord + 1;
-    }
-    else if (request.intent.slots.Direction.value === "west") {
-        attributes.yCoordinate = yCoord - 1;
+    else {
+        speechOutput = "Which direction do you want to go?";
     }
     handlerInput.attributesManager.setSessionAttributes(attributes);
 
-    speechOutput += "You are at x coordinate: " + attributes.xCoordinate + " and y coordinate: " + attributes.yCoordinate;
+    speechOutput += "You go " + direction + ". You are at x coordinate: " + attributes.xCoordinate + " and y coordinate: " + attributes.yCoordinate + map[xCoord][yCoord].returnDescription;
 
     return handlerInput.responseBuilder
       .speak(speechOutput)
@@ -223,14 +310,16 @@ const OpenHandler = {
 
         var speechOutput = "Open intent called. ";
         if (request.intent.slots.openableObject.value === "door") {
-            var door = map[xCoord][yCoord].obstacles.getObstacle("door");
+            var doorObject = map[xCoord][yCoord].obstacles.getObstacle("door");
             if (door) {
                 // Check if door is already unlocked
+                var door = doorObject.barrier;
                 if (door.state === "unlocked") {
                     speechOutput += "You already unlocked the door";
                 }
                 else {
                     speechOutput += "You unlocked the door";
+                    unlockDoor(door, xCoord, yCoord, door.direction);
                 }
             }
             else {
