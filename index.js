@@ -1,158 +1,13 @@
 /* eslint-disable  func-names */
 /* eslint-disable  no-console */
-/*
-To join the video meeting, click this link: https://meet.google.com/ids-cxta-dtb
-Otherwise, to join by phone, dial +1 347-378-7766 and enter this PIN: 907 047 015#
-*/
 
 const Alexa = require('ask-sdk');
-
-
-class Room {
-    constructor(objects, obstacles) {
-        this.objects = objects;
-        this.obstacles = obstacles;
-    }
-
-    static returnDescription(room) {
-        var output = "";
-
-        var str = "";
-        room.objects.forEach(element => {
-            str += "a " + Item.getItemDescription(element) + ", ";
-        });
-
-        if (str) {
-            output += "You see " + str + " in the area. ";
-        }
-        var obstacleDescriptions = Obstacles.getObstacleSurveyDescriptions(room.obstacles);
-        
-        var ctr = 0;
-        
-        var freeSpaces = "";
-        obstacleDescriptions.forEach(element => {
-            var direction = "";
-            if (ctr === 0)
-                direction = "north";
-            else if (ctr === 1)
-                direction = "east";
-            else if (ctr === 2)
-                direction = "south";
-            else
-                direction = "west";
-
-            if (!element) {
-              freeSpaces += direction + ", ";
-            }
-            else if (element && element !== "wall") {
-                output += "There is a " + element + " to the " + direction + ", ";
-            }
-            ctr += 1;
-        });
-        if (freeSpaces) {
-          output += "You can go " + freeSpaces
-        }
-        
-        return output;
-    }
-
-    //format for what's returned: [array of object outputs] + [array of obstacle outputs]
-    
-}
-
-//represents all the four sides of a room
-class Obstacles {
-    constructor(north, south, east, west) {
-        this.north = north;
-        this.south = south;
-        this.east = east;
-        this.west = west;
-    }
-
-    //returns an array of barrier descriptions
-    static getObstacleSurveyDescriptions(obstacles) {
-        return [obstacles.north ? obstacles.north.name: "",
-                obstacles.east ? obstacles.east.name : "",
-                obstacles.south ? obstacles.south.name : "",
-                obstacles.west ? obstacles.west.name : ""];
-    }
-
-    static getObstacle(obstacles, obstacleName) {
-        if (obstacles.north.name === obstacleName)
-            return {"barrier": obstacles.north, "direction": "north"};
-        else if (obstacles.south.name === obstacleName)
-            return {"barrier": obstacles.south, "direction": "south"};
-        else if (obstacles.east.name === obstacleName)
-            return {"barrier": obstacles.east, "direction": "east"};
-        else if (obstacles.west.name === obstacleName)
-            return {"barrier": obstacles.west, "direction": "west"};
-        return false;
-    }
-}
-
-// an obstacle such as wall, door, free, etc.(??)
-// door can have two states: unlocked, locked
-// decription: provides description about barrier that is passed back to player
-
-class Barrier {
-    constructor(name, isPassable, descriptions) {
-        this.name = name;
-        this.isPassable = isPassable;
-        this.descriptions = descriptions;
-    }
-
-    static changeStateTo(barrier, state) {
-        barrier.state = state;
-    }
-
-    // format for what's returned: "barrier.description based on the intent"
-    static returnDescription(barrier, intent) {
-      if (intent in barrier.descriptions) {
-        return barrier.descriptions[intent];
-      }
-      return "";
-    }
-}
-
-class Item {
-    constructor(name) {
-        this.name = name;
-    }
-
-    static getItemDescription(item) {
-        return item.name;
-    }
-}
-
-function getIndexOfObject(array, object) {
-    array.forEach((item, index) => {
-        if (item.name === object)
-            return index;
-    });
-}
-
-// helper function for setting isPassable==false for wall barrier
-function getWall() {
-    var descriptions = {"locked": "A wall blocks your path"};
-    return new Barrier("wall", false, descriptions);
-}
-
-// helper function for setting isPassable==true for door barrier
-function getDoor() {
-    var descriptions = {"open": "you opened the door",
-                    "unlocked": "the door is unlocked",
-                    "locked": "You can't go through a locked door!"};
-    var door = new Barrier("door", false, descriptions);
-    Barrier.changeStateTo(door, "locked");
-    return door;
-}
-
-function initializeMap() {
-    return [
-            [new Room([], new Obstacles(getWall(), null, null, getWall())), new Room([new Item("key")], new Obstacles(getWall(), getDoor(), getWall(), null))],
-            [new Room([], new Obstacles(null, getWall(), getWall(), getWall())), new Room([], new Obstacles(getDoor(), getWall(), getWall(), getWall()))]
-          ];
-}
+// Classes
+var Room = require('./Room').Room;
+var Obstacles = require('./Obstacles').Obstacles;
+var Barrier = require('./Barrier').Barrier;
+var Item = require('./Item').Item;
+var Map = require('./Map');
 
 function isItem(map, item, xCoord, yCoord) {
     if (map[xCoord][yCoord].items.includes(item)) {
@@ -224,16 +79,20 @@ const LaunchHandler = {
         attributes.xCoordinate = 1;
         attributes.yCoordinate = 0;
         attributes.inventory = [];
-        attributes.map = initializeMap();
+        attributes.map = Map.initializeMap();
+        attributes.visited = Map.createVisitedMap(attributes.map);
     }
     
+    var speechOutput = "Welcome to Zork! ";
+    var initialRoom = attributes.map[attributes.xCoordinate][attributes.yCoordinate];
+    speechOutput += Room.navigationDescription(initialRoom, attributes.xCoordinate, attributes.yCoordinate, false);
+    attributes.visited[attributes.xCoordinate][attributes.yCoordinate] = true;
+
     handlerInput.attributesManager.setSessionAttributes(attributes);
-    var speechOutput = "Welcome to Zork!";
-    speechOutput += Room.returnDescription(attributes.map[attributes.xCoordinate][attributes.yCoordinate]);
 
     return handlerInput.responseBuilder
       .speak(speechOutput)
-      .reprompt(REPROMPT_MESSAGE)
+      .reprompt(speechOutput)
       .getResponse();
   },
 };
@@ -273,7 +132,10 @@ const NavigationHandler = {
             var newCoords = getCoordinateInThisDirection(xCoord, yCoord, direction);
             attributes.xCoordinate = newCoords.x;
             attributes.yCoordinate = newCoords.y;
-            speechOutput += "You go " + direction + Room.returnDescription(map[newCoords.x][newCoords.y]);
+            var newRoom = map[newCoords.x][newCoords.y];
+            var didVisit = attributes.visited[attributes.xCoordinate][attributes.yCoordinate];
+            speechOutput += "You go " + direction + ". " + Room.navigationDescription(newRoom, attributes.xCoordinate, attributes.yCoordinate, didVisit);
+            attributes.visited[attributes.xCoordinate][attributes.yCoordinate] = true;
         }
         else {
             speechOutput += Barrier.returnDescription(barrier, "locked");
@@ -285,11 +147,9 @@ const NavigationHandler = {
     }
     handlerInput.attributesManager.setSessionAttributes(attributes);
 
-    
-
     return handlerInput.responseBuilder
       .speak(speechOutput)
-      .reprompt(REPROMPT_MESSAGE)
+      .reprompt(speechOutput)
       .getResponse();
   },
 };
@@ -310,30 +170,23 @@ const PickUpHandler = {
 
         var speechOutput = "";
         if (request.intent.slots.object.value === "key") {
-            var objectsInRoom = map[xCoord][yCoord].objects;
-            var roomContainsKey = false;
-            objectsInRoom.forEach(item => {
-                if (item.name == "key")
-                    roomContainsKey = true;
-            });
+            var key = Room.getItem(map[xCoord][yCoord], "key");
 
-            if (roomContainsKey) {
+            if (key) {
                 speechOutput += "You picked up the key";
-                var itemIndex = getIndexOfObject(map[xCoord][yCoord].objects, "key");
-                map[xCoord][yCoord].objects.splice(itemIndex, 1);
+                attributes.map[xCoord][yCoord] = Room.removeItem(attributes.map[xCoord][yCoord], "key");
                 inventory.push("key");
             }
         }
   
-      handlerInput.attributesManager.setSessionAttributes(attributes);
-  
-      return handlerInput.responseBuilder
+        handlerInput.attributesManager.setSessionAttributes(attributes);
+        
+        return handlerInput.responseBuilder
         .speak(speechOutput)
-        .reprompt(REPROMPT_MESSAGE)
+        .reprompt(speechOutput)
         .getResponse();
     },
   };
-
   
 const OpenHandler = {
     canHandle(handlerInput) {
@@ -350,32 +203,84 @@ const OpenHandler = {
         var inventory = attributes.inventory;
 
         var speechOutput = "";
-        if (request.intent.slots.openableObject.value === "door") {
-            var doorObject = Obstacles.getObstacle(map[xCoord][yCoord].obstacles, "door");
-            if (doorObject) {
-                // Check if door is already unlocked
-                var door = doorObject.barrier;
-                if (door.isPassable) {
-                    speechOutput += "You already unlocked the door";
+        var openableObject = request.intent.slots.openableObject.value;
+        if (openableObject) {
+            var room = map[xCoord][yCoord];
+            var obstacle = Obstacles.getObstacle(room.obstacles, openableObject);
+            var item = Room.getItem(room, openableObject);
+            if (obstacle) {
+                if (obstacle.barrier.name == "door") {
+                    var door = obstacle.barrier;
+                    if (door.isPassable) {
+                        speechOutput += "You already unlocked the door. ";
+                    }
+                    else {
+                        if (request.intent.slots.object.value == "key") {
+                            console.log(inventory);
+                            if (inventory.includes("key")) {
+                            speechOutput += "You unlocked the door. ";
+                            attributes.map = unlockDoor(map, door, xCoord, yCoord, obstacle.direction);
+                            }
+                            else {
+                                speechOutput += "You need a key to unlock the door. ";
+                            }
+                        }
+                        else {
+                            speechOutput += "You need to open the door with something. "
+                        }
+                    }
                 }
                 else {
-                    speechOutput += "You unlocked the door";
-                    attributes.map = unlockDoor(map, door, xCoord, yCoord, doorObject.direction);
+                    speechOutput += "You can't open a " + openableObject + ". ";
+                }
+            }
+            else if (item) {
+                if (item.name === "chest") {
+                    speechOutput += "Congratulations! You have completed your adventure and wake up from your daydream to find yourself back in the conference room. Thanks for playing!";
+                }
+                else {
+                    speechOutput += "You don't know how to open a " + openableObject + ". ";
                 }
             }
             else {
-                speechOutput += "There is no door in here."
+                speechOutput += "There is no " + openableObject +  " in here."
             }
+
+        }
+        else {
+            speechOutput += "You need to specify what you wan't to open";
         }
   
         handlerInput.attributesManager.setSessionAttributes(attributes);
   
         return handlerInput.responseBuilder
             .speak(speechOutput)
-            .reprompt(REPROMPT_MESSAGE)
+            .reprompt(speechOutput)
             .getResponse();
     },
-  };
+};
+
+const SurveyHandler = {
+    canHandle(handlerInput) {
+      const request = handlerInput.requestEnvelope.request;
+      return request.type === 'IntentRequest'
+          && request.intent.name === 'SurveyIntent';
+    },
+    handle(handlerInput) {
+        var request = handlerInput.requestEnvelope.request;
+        var attributes = handlerInput.attributesManager.getSessionAttributes();
+        var xCoord = attributes.xCoordinate;
+        var yCoord = attributes.yCoordinate;
+        var map = attributes.map;
+
+        var speechOutput = Room.surveyDescription(map[xCoord][yCoord]);
+  
+        return handlerInput.responseBuilder
+            .speak(speechOutput)
+            .reprompt(speechOutput)
+            .getResponse();
+    },
+};
 
 const HelpHandler = {
   canHandle(handlerInput) {
@@ -447,7 +352,8 @@ exports.handler = skillBuilder
     ExitHandler,
     SessionEndedRequestHandler,
     PickUpHandler,
-    OpenHandler
+    OpenHandler,
+    SurveyHandler
   )
   .addErrorHandlers(ErrorHandler)
   .lambda();
